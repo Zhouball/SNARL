@@ -142,6 +142,7 @@ int add_user(std::string username, std::string password, std::string firstname,
   
   delete con;
   delete stmt;
+  return 0;
 }
 
 int main(int argc, char **argv) {
