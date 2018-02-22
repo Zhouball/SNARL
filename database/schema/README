@@ -1,11 +1,23 @@
-USERS
+USERS AND SALTS
 
 Create the users table:
 2018-02-21-01-users.sql
 
+Create the salts table:
+2018-02-21-02-salts.sql
+
 Tests:
+Create user, no salt, should fail:
+INSERT INTO users (username,first_name,last_name,email,hash_and_salt,create_date,update_date) VALUES ('nishsab','Nishant','Sabharwal','nishsab@gmail.com','temp_for_demo',UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
+
+Create salt:
+INSERT INTO salts (username,salt) VALUES ('nishsab','1234');
+
+Create duplicate, should fail:
+INSERT INTO salts (username,salt) VALUES ('nishsab','1234');
+
 Create user, regular case:
-INSERT INTO users (username,email,hash_and_salt,create_date,update_date) VALUES ('nishsab','ns@gmail.com','temp_for_demo',UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
+INSERT INTO users (username,first_name,last_name,email,hash_and_salt,create_date,update_date) VALUES ('nishsab','Nishant','Sabharwal','nishsab@gmail.com',SHA2(CONCAT('password',(SELECT salt FROM salts WHERE username = 'nishsab')),512),UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
 
 Check username is unique, should fail:
 INSERT INTO users (username,email,hash_and_salt,create_date,update_date) VALUES ('ns','nishsab@gmail.com','temp_for_demo',UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
