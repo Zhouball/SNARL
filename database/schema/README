@@ -1,0 +1,17 @@
+USERS
+
+Create the users table:
+2018-02-21-01-users.sql
+
+Tests:
+Create user, regular case:
+INSERT INTO users (username,email,hash_and_salt,create_date,update_date) VALUES ('nishsab','ns@gmail.com','temp_for_demo',UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
+
+Check username is unique, should fail:
+INSERT INTO users (username,email,hash_and_salt,create_date,update_date) VALUES ('ns','nishsab@gmail.com','temp_for_demo',UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
+
+Check email is unique, should fail:
+INSERT INTO users (username,email,hash_and_salt,create_date,update_date) VALUES ('ns','ns@gmail.com','temp_for_demo',UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
+
+Check name can be null:
+INSERT INTO users (username,email,hash_and_salt,create_date,update_date) VALUES ('ns','ns@gmail.com','temp_for_demo',UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
