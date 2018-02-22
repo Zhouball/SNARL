@@ -1,0 +1,27 @@
+Requirements: OpenSSL, libmysqlcppconn-dev, libmysqlclient, boost
+Please link as specified in the Makefile
+
+1. Basic mysql installation (should bring in libmysqlclient):
+
+sudo apt-get install mysql-server
+
+Start the background server on your local machine with this command:
+
+service mysql start
+
+2. Installing OpenSSL:
+
+sudo apt-get install libssl-dev
+
+3. Installing libmysqlcppconn-dev:
+
+sudo apt-get install libmysqlcppconn-dev
+
+4. Installing boost:
+
+If boost is already inside /usr/include then there is nothing to do. If not, please
+download the binary archive and put it in some location. Change the PATHS macro in
+the Makefile to reflect this location
+
+
+
