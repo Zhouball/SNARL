@@ -17,9 +17,9 @@
 #include <cppconn/statement.h>
 
 const std::string DB_ADDR = "127.0.0.1:3306";          //IP address and port of MySQL server
-const std::string DB_NAME = "SNARL_central";
+const std::string DB_NAME = "escality";
 const std::string DB_USERNAME = "root";
-const std::string DB_PASSWORD = "man50sarovar100";
+const std::string DB_PASSWORD = "";
 const std::string SALT_USERNAME_TABLE = "salts";      //name of the table containing (username, salt)
 const std::string MAIN_TABLE = "users";               //name of the main user details table
 
