@@ -203,14 +203,15 @@ int check_credentials(std::string username, std::string email, std::string passw
 }
 
 int add_user(std::string username, std::string password, std::string firstname,
-	      std::string lastname, std::string email) {
+	     std::string lastname, std::string email, int admin) {
 
-  /* Returns -1 upon OpenSSL failure. Exception upon mysql failure */
+  /* Returns -1 upon OpenSSL failure. Exception upon mysql failure 
+     admin should be 1 if the user is an administrator. Else it should be 0 */
   
   unsigned long salt = salt_generator();        //generate the salt
   char *plaintext = (char *) malloc(sizeof(const char) * (1 + password.size()));
   strcpy(plaintext, password.c_str());
-  char *hash_and_salt_cstr = hash_plaintext(plaintext, password.size(), salt);       //hash the password
+  char *hash_and_salt_cstr = hash_plaintext(plaintext, password.size(), salt); //hash the password
 
   if (hash_and_salt_cstr == NULL)
     return -1;
@@ -233,8 +234,8 @@ int add_user(std::string username, std::string password, std::string firstname,
   stmt = con->createStatement();
   stmt->execute("USE " + DB_NAME);
   
-  std::string command = "INSERT INTO " + SALT_USERNAME_TABLE + " VALUES ('" + username + //Insert (username, salt)
-    "', " + std::to_string(salt) + ");";
+  std::string command = "INSERT INTO " + SALT_USERNAME_TABLE + " VALUES ('" + //Insert (username, salt)
+    username + "', " + std::to_string(salt) + ");";
   stmt->execute(command);
   
   std::time_t rawtime; //Obtain time
@@ -246,9 +247,16 @@ int add_user(std::string username, std::string password, std::string firstname,
   std::string time_str(time_buf);
   
   command = "INSERT INTO " + MAIN_TABLE +
-    " (username, first_name, last_name, email, hash_and_salt, create_date, update_date) VALUES ";
-  command += "('" + username + "', '" + firstname + "', '" + lastname + "', '" + email + "', '" +
-    hash_and_salt + "', '" + time_str + "', '" + time_str + "');";     //Insert rest of the data
+    " (username, first_name, last_name, permission, email, hash_and_salt, create_date, update_date) VALUES ";
+  
+  command += "('" + username + "', '" + firstname + "', '" + lastname;
+  if (admin)
+    command += "', 'ADMIN";
+  else
+    command += "', 'USER";
+  
+  command += "', '" + email + "', '" + hash_and_salt + "', '" + time_str + "', '"
+    + time_str + "');";     //Insert rest of the data
   
   stmt->execute(command);
   
@@ -259,9 +267,9 @@ int add_user(std::string username, std::string password, std::string firstname,
 
 int main(int argc, char **argv) {
   openssl_init();
-  add_user("billclinton", "passwordclint", "BILL", "CLINTON", "billclinton@g.ucla.edu");
-  add_user("akshaysmit", "password234", "AKSHAY", "SMIT", "akshaysmit@g.ucla.edu");
-  add_user("justint", "424by424", "JUSTIN", "TRUDEAU", "justint@g.ucla.edu");
+  add_user("billclinton", "passwordclint", "BILL", "CLINTON", "billclinton@g.ucla.edu", 1);
+  add_user("akshaysmit", "password234", "AKSHAY", "SMIT", "akshaysmit@g.ucla.edu", 0);
+  add_user("justint", "424by424", "JUSTIN", "TRUDEAU", "justint@g.ucla.edu", 0);
   
   std::cout << check_credentials("akshaysmit", "", "password234") << std::endl;
   std::cout << check_credentials("", "", "") << std::endl;
