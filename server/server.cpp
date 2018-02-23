@@ -5,6 +5,7 @@
 #include <random>
 #include <sstream>
 #include <ctime>
+#include <cassert>       //For testing only
 #include "openssl/sha.h"
 #include "openssl/ssl.h"
 #include "openssl/err.h"
@@ -265,40 +266,108 @@ int add_user(std::string username, std::string password, std::string firstname,
   return 0;
 }
 
-int main(int argc, char **argv) {
-  openssl_init();
-  add_user("billclinton", "passwordclint", "BILL", "CLINTON", "billclinton@g.ucla.edu", 1);
-  add_user("akshaysmit", "password234", "AKSHAY", "SMIT", "akshaysmit@g.ucla.edu", 0);
-  add_user("justint", "424by424", "JUSTIN", "TRUDEAU", "justint@g.ucla.edu", 0);
-  
-  std::cout << check_credentials("akshaysmit", "", "password234") << std::endl;
-  std::cout << check_credentials("", "", "") << std::endl;
-  std::cout << check_credentials("", "akshaysmit@g.ucla.edu", "password234") << std::endl;
-  
-  /*
+int details_by_username(std::string username, std::string& email, std::string& firstname,
+			std::string& lastname, std::string& create_date, std::string& update_date,
+			int& admin) {
+  /* Gets details associated with username. Fills the other arguments with data
+     If user is an admin, the admin argument will be set to 1. Else to 0.
+     Returns -1 if username is not present in database 
+     Returns -2 if username is empty string
+     Exception upon mysql failure */
+
   sql::mysql::MySQL_Driver *driver;
   sql::Connection *con;
   sql::Statement *stmt;
   sql::ResultSet *res;
   
-  driver = sql::mysql::get_mysql_driver_instance();
-  con = driver->connect("tcp://127.0.0.1:3306", "root", "");
+  if (username == "")
+    return -2;
 
-  if(!con->isValid()) {
-    std::cerr << "Couldn't connect!" << std::endl;
-  }
+  driver = sql::mysql::get_mysql_driver_instance();
+  con = driver->connect("tcp://" + DB_ADDR, DB_USERNAME, DB_PASSWORD);
 
   stmt = con->createStatement();
-  stmt->execute("USE countries");
-  stmt->execute("INSERT INTO Countries VALUES ('Nepal', 'Asia', 28000000);");
-  res = stmt->executeQuery("SELECT * FROM Countries;");
-  while (res->next()) {
-    std::cout << "name=" << res->getString("name");
-    std::cout << ", continent=" << res->getString("continent");
-    std::cout << ", population=" << res->getInt(3) << std::endl;
+  stmt->execute("USE " + DB_NAME);
+
+  std::string command = "SELECT email, first_name, last_name, permission, create_date, update_date";
+  command += " FROM " + MAIN_TABLE + " WHERE username = '" + username + "';";
+
+  res = stmt->executeQuery(command);
+
+  if (res->next()) {
+    email = res->getString("email");
+    firstname = res->getString("first_name");
+    lastname = res->getString("last_name");
+    create_date = res->getString("create_date");
+    update_date = res->getString("update_date");
+    if (res->getString("permission") == "ADMIN")
+      admin = 1;
+    else
+      admin = 0;
   }
+  else
+    return -1;
 
   delete con;
   delete stmt;
-  delete res; */
+  delete res;
+  return 0;
+}
+
+int delete_user(std::string username) {
+  /* Removes the user associated with username from the database 
+     Returns -1 if username is empty string. Exception upon mysql error */
+
+  sql::mysql::MySQL_Driver *driver;
+  sql::Connection *con;
+  sql::Statement *stmt;
+
+  if (username == "")
+    return -1;
+
+  driver = sql::mysql::get_mysql_driver_instance();
+  con = driver->connect("tcp://" + DB_ADDR, DB_USERNAME, DB_PASSWORD);
+
+  stmt = con->createStatement();
+  stmt->execute("USE " + DB_NAME);
+
+  std::string command = "DELETE FROM " + MAIN_TABLE + " WHERE username = '" + username + "';";
+  stmt->execute(command);
+
+  command = "DELETE FROM " + SALT_USERNAME_TABLE + " WHERE username = '" + username + "';";
+  stmt->execute(command);
+  
+  delete con;
+  delete stmt;
+  return 0;
+}
+
+int main(int argc, char **argv) {
+  
+  openssl_init();
+  assert(add_user("billclinton", "passwordclint", "BILL", "CLINTON", "billclinton@g.ucla.edu", 1) == 0);
+  assert(add_user("akshaysmit", "password234", "AKSHAY", "SMIT", "akshaysmit@g.ucla.edu", 0) == 0);
+  assert(add_user("justint", "424by424", "JUSTIN", "TRUDEAU", "justint@g.ucla.edu", 0) == 0);
+  assert(add_user("user1", "password1", "USER", "1", "user1@g.ucla.edu", 0) == 0);
+  assert(add_user("user2", "password2", "USER", "2", "user2@g.ucla.edu", 0) == 0);
+  assert(add_user("user3", "password3", "USER", "3", "user3@g.ucla.edu", 0) == 0);
+  assert(add_user("user4", "password4", "USER", "4", "user4@g.ucla.edu", 0) == 0);
+
+  assert(check_credentials("akshaysmit", "", "password234") == 0);
+  assert(check_credentials("", "", "") == -3);
+  assert(check_credentials("", "akshaysmit@g.ucla.edu", "password234") == 0);
+  assert(check_credentials("", "justint@g.ucla.edu", "wrong") == -1);
+  assert(check_credentials("blah", "", "blahpass") == -1);
+  assert(check_credentials("", "blah@g.ucla.edu", "wrong") == -1);
+
+  std::string email, firstname, lastname, create_date, update_date;
+  int admin;
+
+  details_by_username("akshaysmit", email, firstname, lastname, create_date, update_date, admin);
+  std::cout << email << " " << firstname << " " << lastname << " " << create_date << " "
+	    << update_date << " " << admin << std::endl;
+  
+  assert(delete_user("akshaysmit") == 0);
+  assert(delete_user("billclinton") == 0);
+  assert(delete_user("justint") == 0);
 }
