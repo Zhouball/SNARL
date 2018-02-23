@@ -4,6 +4,7 @@
 #include <string>
 #include <random>
 #include <sstream>
+#include <ctime>
 #include "openssl/sha.h"
 #include "openssl/ssl.h"
 #include "openssl/err.h"
@@ -15,11 +16,14 @@
 #include <cppconn/resultset.h>
 #include <cppconn/statement.h>
 
-const std::string DB_NAME = "escality";
+const std::string DB_ADDR = "127.0.0.1:3306";          //IP address and port of MySQL server
+const std::string DB_NAME = "SNARL_central";
 const std::string DB_USERNAME = "root";
-const std::string DB_PASSWORD = "";
-const std::string SALT_USERNAME_TABLE = "salts";      //name of the table containint (username, salt)
+const std::string DB_PASSWORD = "man50sarovar100";
+const std::string SALT_USERNAME_TABLE = "salts";      //name of the table containing (username, salt)
 const std::string MAIN_TABLE = "users";               //name of the main user details table
+
+/* All times sent to database are in UTC */
 
 void openssl_init() {
   SSL_library_init();
@@ -101,6 +105,103 @@ std::string char_to_hex(char *str, int len) {
   return ss.str();
 }
 
+int check_credentials(std::string username, std::string email, std::string password) {
+  // Returns -1 upon invalid details
+  // Returns -2 upon OpenSSL failure. Exception upon mysql failure
+  // Returns -3 if both arguments empty
+  // at least one of username and email must be non-empty string
+
+  sql::mysql::MySQL_Driver *driver;
+  sql::Connection *con;
+  sql::Statement *stmt;
+  sql::ResultSet *res;
+  unsigned long salt;
+  
+  if (username == "" && email == "")
+    return -3;
+
+  driver = sql::mysql::get_mysql_driver_instance();
+  con = driver->connect("tcp://" + DB_ADDR, DB_USERNAME, DB_PASSWORD);
+
+  stmt = con->createStatement();
+  stmt->execute("USE " + DB_NAME);
+
+  std::string hash_and_salt;
+  
+  if (username != "") {      //search by username
+    std::string command = "SELECT salt FROM " + SALT_USERNAME_TABLE + " WHERE username = '"
+      + username + "';";
+    res = stmt->executeQuery(command);
+
+    if (res->next())
+      salt = std::stoul(res->getString("salt")); 
+    else {                    //No such username
+      delete con;
+      delete stmt;
+      delete res;
+      return -1;
+    }
+    delete res;
+    
+    command = "SELECT hash_and_salt FROM " + MAIN_TABLE + " WHERE username = '" +
+      username + "';";
+    res = stmt->executeQuery(command);  //Obtain hash_and_salt from database
+    
+    if (res->next())
+      hash_and_salt = res->getString("hash_and_salt");
+  }
+
+  else {         //search by email
+    std::string command = "SELECT username, hash_and_salt FROM " + MAIN_TABLE +
+      " WHERE email = '" + email + "';";
+    res = stmt->executeQuery(command);
+    
+    std::string username;
+    
+    if (res->next()) {
+      hash_and_salt = res->getString("hash_and_salt");
+      username = res->getString("username");
+    }
+    else {      //no such email
+      delete con;
+      delete stmt;
+      delete res;
+      return -1;
+    }
+    delete res;
+
+    command = "SELECT salt FROM " + SALT_USERNAME_TABLE + " WHERE username = '" + username + "';";
+    res = stmt->executeQuery(command);
+
+    if (res->next())
+      salt = std::stoul(res->getString("salt"));
+  }
+  
+  char *plaintext = (char *) malloc(sizeof(char) * (password.size() + 1));
+  strcpy(plaintext, password.c_str());
+
+  char *recomputed_cstr = hash_plaintext(plaintext, password.size(), salt);
+  if (recomputed_cstr == NULL) {
+    free(recomputed_cstr);
+    free(plaintext);
+    delete con;
+    delete stmt;
+    delete res;
+    return -2;
+  }
+
+  std::string recomputed = char_to_hex(recomputed_cstr, SHA512_DIGEST_LENGTH);
+  if (recomputed != hash_and_salt) //recomputed hash is different
+    return -1;
+  
+  free(recomputed_cstr);
+  free(plaintext);
+  delete con;
+  delete stmt;
+  delete res;
+  return 0;
+}
+
 int add_user(std::string username, std::string password, std::string firstname,
 	      std::string lastname, std::string email) {
 
@@ -113,8 +214,10 @@ int add_user(std::string username, std::string password, std::string firstname,
 
   if (hash_and_salt_cstr == NULL)
     return -1;
-  
-  std::string hash_and_salt = char_to_hex(hash_and_salt_cstr, SHA512_DIGEST_LENGTH); //convert char to two-digit hexadecimal
+
+  //convert char to two-digit hexadecimal
+  std::string hash_and_salt = char_to_hex(hash_and_salt_cstr, SHA512_DIGEST_LENGTH);
+
   free(hash_and_salt_cstr);
   free(plaintext);
 
@@ -125,8 +228,8 @@ int add_user(std::string username, std::string password, std::string firstname,
   sql::Statement *stmt;
   
   driver = sql::mysql::get_mysql_driver_instance();
-  con = driver->connect("tcp://127.0.0.1:3306", DB_USERNAME, DB_PASSWORD);          //MySQL uses 3306 by default
-  
+  con = driver->connect("tcp://" + DB_ADDR, DB_USERNAME, DB_PASSWORD);
+
   stmt = con->createStatement();
   stmt->execute("USE " + DB_NAME);
   
@@ -134,10 +237,19 @@ int add_user(std::string username, std::string password, std::string firstname,
     "', " + std::to_string(salt) + ");";
   stmt->execute(command);
   
+  std::time_t rawtime; //Obtain time
+  std::tm* timeinfo;
+  char time_buf[64];
+  std::time(&rawtime);
+  timeinfo = std::gmtime(&rawtime);
+  std::strftime(time_buf, 64,"%Y-%m-%d %H:%M:%S",timeinfo);
+  std::string time_str(time_buf);
   
-  command = "INSERT INTO " + MAIN_TABLE + " (username, first_name, last_name, email, hash_and_salt) VALUES ";
+  command = "INSERT INTO " + MAIN_TABLE +
+    " (username, first_name, last_name, email, hash_and_salt, create_date, update_date) VALUES ";
   command += "('" + username + "', '" + firstname + "', '" + lastname + "', '" + email + "', '" +
-    hash_and_salt + "');";     //Insert rest of the data
+    hash_and_salt + "', '" + time_str + "', '" + time_str + "');";     //Insert rest of the data
+  
   stmt->execute(command);
   
   delete con;
@@ -147,7 +259,13 @@ int add_user(std::string username, std::string password, std::string firstname,
 
 int main(int argc, char **argv) {
   openssl_init();
-  add_user("billclinton", "monstar", "Bill", "Clinton", "billclinton@g.ucla.edu");
+  add_user("billclinton", "passwordclint", "BILL", "CLINTON", "billclinton@g.ucla.edu");
+  add_user("akshaysmit", "password234", "AKSHAY", "SMIT", "akshaysmit@g.ucla.edu");
+  add_user("justint", "424by424", "JUSTIN", "TRUDEAU", "justint@g.ucla.edu");
+  
+  std::cout << check_credentials("akshaysmit", "", "password234") << std::endl;
+  std::cout << check_credentials("", "", "") << std::endl;
+  std::cout << check_credentials("", "akshaysmit@g.ucla.edu", "password234") << std::endl;
   
   /*
   sql::mysql::MySQL_Driver *driver;
