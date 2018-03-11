@@ -8,7 +8,7 @@ Create the salts table:
 
 Tests:
 Create user, no salt, should fail:
-INSERT INTO users (username,first_name,last_name,email,hash_and_salt,create_date,update_date) VALUES ('nishsab','Nishant','Sabharwal','nishsab@gmail.com','temp_for_demo',UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
+INSERT INTO users (username,first_name,last_name,email,hash_and_salt,create_date,update_date) VALUES ('nishsab','Nishant','Sabharwal','nishsab@gmail.com','temp_for_demo',NOW(),NOW());
 
 Create salt:
 INSERT INTO salts (username,salt) VALUES ('nishsab','1234');
@@ -17,13 +17,34 @@ Create duplicate, should fail:
 INSERT INTO salts (username,salt) VALUES ('nishsab','1234');
 
 Create user, regular case:
-INSERT INTO users (username,first_name,last_name,email,hash_and_salt,create_date,update_date) VALUES ('nishsab','Nishant','Sabharwal','nishsab@gmail.com',SHA2(CONCAT('password',(SELECT salt FROM salts WHERE username = 'nishsab')),512),UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
+INSERT INTO users (username,first_name,last_name,email,hash_and_salt,create_date,update_date) VALUES ('nishsab','Nishant','Sabharwal','nishsab@gmail.com',SHA2(CONCAT('password',(SELECT salt FROM salts WHERE username = 'nishsab')),512),NOW(),NOW());
 
 Check username is unique, should fail:
-INSERT INTO users (username,email,hash_and_salt,create_date,update_date) VALUES ('ns','nishsab@gmail.com','temp_for_demo',UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
+INSERT INTO users (username,email,hash_and_salt,create_date,update_date) VALUES ('nishsab','nishsab@gmail.com','temp_for_demo',NOW(),NOW());
 
 Check email is unique, should fail:
-INSERT INTO users (username,email,hash_and_salt,create_date,update_date) VALUES ('ns','ns@gmail.com','temp_for_demo',UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
+INSERT INTO salts (username,salt) VALUES ('ns','1234');
+INSERT INTO users (username,email,hash_and_salt) VALUES ('ns','nishsab@gmail.com','temp_for_demo');
 
-Check name can be null:
-INSERT INTO users (username,email,hash_and_salt,create_date,update_date) VALUES ('ns','ns@gmail.com','temp_for_demo',UNIX_TIMESTAMP(),UNIX_TIMESTAMP());
+Check name can be null and timestamp defaults are correct: 
+INSERT INTO users (username,email,hash_and_salt) VALUES ('ns','ns@gmail.com','temp_for_demo');
+
+Check general_objects table:
+INSERT INTO general_objects (object_name,object_desc,status) VALUES ("Lightning Bolt","Yellow","AVAILABLE");
+
+Test changing weapon_object to owned:
+UPDATE general_objects SET status="OWNED", owner="nishsab" WHERE object_name="Lightning Bolt";
+
+Drop general_object:
+INSERT INTO dropped_objects (lat,lon,general_object) VALUES (34.189480,-118.597479,1);
+UPDATE general_objects SET status="AVAILABLE", owner=null WHERE id = 1;
+
+Drop weapon_object:
+INSERT INTO dropped_objects (lat,lon,weapon_object) VALUES (-34.189480,118.597479,1);
+UPDATE weapon_objects SET status="AVAILABLE", owner=null WHERE id = 1;
+
+Pick up weapon_object:
+select id,weapon_object from dropped_objects where lat >= -34.1895 and lat <= -34.1894 and lon >= 118.5974 and lon <= 118.5975 and valid = 1 and not weapon_object is null;
+update dropped_objects set valid = 0 where id = 2;
+UPDATE weapon_objects SET status="OWNED", owner="nishsab" WHERE id = 1;
+
