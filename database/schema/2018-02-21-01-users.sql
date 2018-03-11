@@ -9,7 +9,7 @@ CREATE TABLE `users` (
   `hash_and_salt` varchar(128) NOT NULL,
   `create_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  PRIMARY KEY (`id`),
+   PRIMARY KEY (`id`),
   UNIQUE KEY (`username`),
   UNIQUE KEY (`email`),
   CONSTRAINT `users_0` FOREIGN KEY (`username`) REFERENCES `salts` (`username`)
