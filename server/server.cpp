@@ -9,6 +9,7 @@
 #include "openssl/sha.h"
 #include "openssl/ssl.h"
 #include "openssl/err.h"
+#include "SNARL.h"
 
 #include "mysql_connection.h"
 #include <mysql_driver.h>
@@ -17,30 +18,29 @@
 #include <cppconn/resultset.h>
 #include <cppconn/statement.h>
 
-const std::string DB_ADDR = "127.0.0.1:3306";          //IP address and port of MySQL server
-const std::string DB_NAME = "escality";
-const std::string DB_USERNAME = "root";
-const std::string DB_PASSWORD = "";
-const std::string SALT_USERNAME_TABLE = "salts";      //name of the table containing (username, salt)
-const std::string MAIN_TABLE = "users";               //name of the main user details table
+//const std::string DB_ADDR = "127.0.0.1:3306";
+//const std::string DB_USERNAME = "root";
+//const std::string DB_PASSWORD = "";
 
 /* All times sent to database are in UTC */
 
-void openssl_init() {
+
+/* private */
+void Account_Manager::openssl_init() {
   SSL_library_init();
   SSL_load_error_strings();
   OpenSSL_add_all_algorithms();
   ERR_load_crypto_strings();
 }
 
-unsigned long salt_generator() { //unsigned 32-bit int from uniform distribution
+unsigned long Account_Manager::salt_generator() { //unsigned 32-bit int from uniform distribution
   std::random_device seed;
   std::mt19937 generator(seed());
   std::uniform_int_distribution<unsigned long> dist(0, (unsigned long) 4294967295);
   return dist(generator);
 }
 
-int count_digits(unsigned long x) {
+int Account_Manager::count_digits(unsigned long x) {
   return (x < 10 ? 1 :
 	  (x < 100 ? 2 :
 	   (x < 1000 ? 3 :
@@ -53,7 +53,7 @@ int count_digits(unsigned long x) {
 		  10))))))))); 
 }
 
-char *hash_plaintext(const char *plaintext, int len, unsigned long salt) {
+char *Account_Manager::hash_plaintext(const char *plaintext, int len, unsigned long salt) {
   /* final value is hash(concatenate(hash(plaintext), salt)) 
      returns NULL upon error 
      the size of returned array is SHA512_DIGEST_LENGTH */
@@ -96,7 +96,7 @@ char *hash_plaintext(const char *plaintext, int len, unsigned long salt) {
   return (char *) md_fin;
 }
 
-std::string char_to_hex(char *str, int len) {
+std::string Account_Manager::char_to_hex(char *str, int len) {
   std::stringstream ss;
   for (int i = 0; i < len; i++) {
     ss.width(2);
@@ -106,7 +106,16 @@ std::string char_to_hex(char *str, int len) {
   return ss.str();
 }
 
-int check_credentials(std::string username, std::string email, std::string password) {
+
+/* public */
+Account_Manager::Account_Manager(std::string username, std::string password, std::string db_addr) {
+  m_username = username;
+  m_password = password;
+  m_db_addr = db_addr;
+  openssl_init();
+}
+
+int Account_Manager::check_credentials(std::string username, std::string email, std::string password) {
   // Returns -1 upon invalid details
   // Returns -2 upon OpenSSL failure. Exception upon mysql failure
   // Returns -3 if both arguments empty
@@ -122,7 +131,7 @@ int check_credentials(std::string username, std::string email, std::string passw
     return -3;
 
   driver = sql::mysql::get_mysql_driver_instance();
-  con = driver->connect("tcp://" + DB_ADDR, DB_USERNAME, DB_PASSWORD);
+  con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
 
   stmt = con->createStatement();
   stmt->execute("USE " + DB_NAME);
@@ -203,7 +212,7 @@ int check_credentials(std::string username, std::string email, std::string passw
   return 0;
 }
 
-int add_user(std::string username, std::string password, std::string firstname,
+int Account_Manager::add_user(std::string username, std::string password, std::string firstname,
 	     std::string lastname, std::string email, int admin) {
 
   /* Returns -1 upon OpenSSL failure. Exception upon mysql failure 
@@ -230,7 +239,7 @@ int add_user(std::string username, std::string password, std::string firstname,
   sql::Statement *stmt;
   
   driver = sql::mysql::get_mysql_driver_instance();
-  con = driver->connect("tcp://" + DB_ADDR, DB_USERNAME, DB_PASSWORD);
+  con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
 
   stmt = con->createStatement();
   stmt->execute("USE " + DB_NAME);
@@ -266,7 +275,7 @@ int add_user(std::string username, std::string password, std::string firstname,
   return 0;
 }
 
-int details_by_username(std::string username, std::string& email, std::string& firstname,
+int Account_Manager::details_by_username(std::string username, std::string& email, std::string& firstname,
 			std::string& lastname, std::string& create_date, std::string& update_date,
 			int& admin) {
   /* Gets details associated with username. Fills the other arguments with data
@@ -284,7 +293,7 @@ int details_by_username(std::string username, std::string& email, std::string& f
     return -2;
 
   driver = sql::mysql::get_mysql_driver_instance();
-  con = driver->connect("tcp://" + DB_ADDR, DB_USERNAME, DB_PASSWORD);
+  con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
 
   stmt = con->createStatement();
   stmt->execute("USE " + DB_NAME);
@@ -314,7 +323,7 @@ int details_by_username(std::string username, std::string& email, std::string& f
   return 0;
 }
 
-int delete_user(std::string username) {
+int Account_Manager::delete_user(std::string username) {
   /* Removes the user associated with username from the database 
      Returns -1 if username is empty string. Exception upon mysql error */
 
@@ -326,7 +335,7 @@ int delete_user(std::string username) {
     return -1;
 
   driver = sql::mysql::get_mysql_driver_instance();
-  con = driver->connect("tcp://" + DB_ADDR, DB_USERNAME, DB_PASSWORD);
+  con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
 
   stmt = con->createStatement();
   stmt->execute("USE " + DB_NAME);
@@ -343,7 +352,7 @@ int delete_user(std::string username) {
 }
 
 int main(int argc, char **argv) {
-  
+  /*
   openssl_init();
   assert(add_user("billclinton", "passwordclint", "BILL", "CLINTON", "billclinton@g.ucla.edu", 1) == 0);
   assert(add_user("akshaysmit", "password234", "AKSHAY", "SMIT", "akshaysmit@g.ucla.edu", 0) == 0);
@@ -369,5 +378,5 @@ int main(int argc, char **argv) {
   
   assert(delete_user("akshaysmit") == 0);
   assert(delete_user("billclinton") == 0);
-  assert(delete_user("justint") == 0);
+  assert(delete_user("justint") == 0); */
 }
