@@ -9,6 +9,5 @@ CREATE TABLE `weapon_objects` (
   `create_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   `update_date` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),
-  KEY (`owner`),
-  CONSTRAINT `weapon_objects_0` FOREIGN KEY (`owner`) REFERENCES `users` (`username`)
+  KEY (`owner`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8

@@ -1,1 +1,2 @@
-CREATE DATABASE `escality`;
+CREATE DATABASE `administrative`;
+CREATE DATABASE `game`;
