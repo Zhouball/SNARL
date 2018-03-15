@@ -771,8 +771,10 @@ int Object_Manager::delete_weapon_object(int id) {
 
 int Object_Manager::general_objects_at(double lat, double lon, std::vector<std::string>& name,
 				       std::vector<std::string>& desc, std::vector<int>& id) {
+  
   /* This returns all general_objects at the specified location. Names go in name, descriptions go
      in desc, object id goes in id. This function WILL CLEAR vector arguments.
+     This function consults ONLY THE LOCAL DATABASE. This greatly decreases latency.
      Returns 0 upon normal operation, or prints error message in case MySQL error */
 
   name.clear();
@@ -829,7 +831,8 @@ int Object_Manager::weapon_objects_at(double lat, double lon, std::vector<std::s
 
   /* This returns all weapon_objects at the specified location. Names go in name, descriptions go
      in desc, object id goes in id, weapon type goes in type, power of the weapon goes in power
-     This function WILL CLEAR the vector arguments.
+     This function WILL CLEAR the vector arguments. 
+     This function consults ONLY THE LOCAL DATABASE. This greatly decreases latency.
      Returns 0 upon normal operation, or prints error message in case MySQL error */
   
   name.clear();
