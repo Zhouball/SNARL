@@ -1,11 +1,8 @@
+#ifndef SNARL_H
+#define SNARL_H
+
 #include <vector>
 #include <string>
-#include "mysql_connection.h"
-#include <mysql_driver.h>
-#include <cppconn/driver.h>
-#include <cppconn/exception.h>
-#include <cppconn/resultset.h>
-#include <cppconn/statement.h>
 
 /* A class to manage the accounts database. Only one machine need use this object. 
    Apart from documentation, the implementation file contains description of 
@@ -85,3 +82,5 @@ class Object_Manager {
   /* functions */
   std::string get_time_str();
 };
+
+#endif /* SNARL_H */

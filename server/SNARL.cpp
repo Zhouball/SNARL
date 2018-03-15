@@ -901,7 +901,7 @@ int main(int argc, char **argv) {
 
   std::vector<std::string> addr;
   addr.push_back("127.0.0.1:3306");
-  Object_Manager om("root", "man50sarovar100", addr);
+  Object_Manager om("root", "", addr);
   om.insert_general_object("guitar", "two-string", 225, 74.6, 10.5);
   om.insert_general_object("Mac", "11 inch", 447, 74.6, 10.5);
   om.insert_general_object("Apple", "Green", 508, 74.6, 10.5);
