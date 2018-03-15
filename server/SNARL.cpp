@@ -10,6 +10,7 @@
 #include "openssl/ssl.h"
 #include "openssl/err.h"
 #include "SNARL.h"
+#include <algorithm>
 
 #include "mysql_connection.h"
 #include <mysql_driver.h>
@@ -18,11 +19,12 @@
 #include <cppconn/resultset.h>
 #include <cppconn/statement.h>
 
-//const std::string DB_ADDR = "127.0.0.1:3306";
-//const std::string DB_USERNAME = "root";
-//const std::string DB_PASSWORD = "";
+// All times sent to database are in UTC
 
-/* All times sent to database are in UTC */
+
+/*..........................
+        Account_Manager
+ ...........................*/
 
 
 /* private */
@@ -121,95 +123,106 @@ int Account_Manager::check_credentials(std::string username, std::string email, 
   // Returns -3 if both arguments empty
   // at least one of username and email must be non-empty string
 
-  sql::mysql::MySQL_Driver *driver;
-  sql::Connection *con;
-  sql::Statement *stmt;
-  sql::ResultSet *res;
-  unsigned long salt;
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+    sql::ResultSet *res;
+    unsigned long salt;
   
-  if (username == "" && email == "")
-    return -3;
+    if (username == "" && email == "")
+      return -3;
 
-  driver = sql::mysql::get_mysql_driver_instance();
-  con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
+    driver = sql::mysql::get_mysql_driver_instance();
+    con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
+    
+    stmt = con->createStatement();
+    stmt->execute("USE " + DB_NAME);
+    
+    std::string hash_and_salt;
+    
+    if (username != "") {      //search by username
+      std::string command = "SELECT salt FROM " + SALT_USERNAME_TABLE + " WHERE username = '"
+	+ username + "';";
+      res = stmt->executeQuery(command);
+    
+      if (res->next())
+	salt = std::stoul(res->getString("salt")); 
+      else {                    //No such username
+	delete con;
+	delete stmt;
+	delete res;
+	return -1;
+      }
+      delete res;
+    
+      command = "SELECT hash_and_salt FROM " + MAIN_TABLE + " WHERE username = '" +
+	username + "';";
+      res = stmt->executeQuery(command);  //Obtain hash_and_salt from database
+    
+      if (res->next())
+	hash_and_salt = res->getString("hash_and_salt");
+    }
 
-  stmt = con->createStatement();
-  stmt->execute("USE " + DB_NAME);
+    else {         //search by email
+      std::string command = "SELECT username, hash_and_salt FROM " + MAIN_TABLE +
+	" WHERE email = '" + email + "';";
+      res = stmt->executeQuery(command);
+      
+      std::string username;
+    
+      if (res->next()) {
+	hash_and_salt = res->getString("hash_and_salt");
+	username = res->getString("username");
+      }
+      else {      //no such email
+	delete con;
+	delete stmt;
+	delete res;
+	return -1;
+      }
+      delete res;
 
-  std::string hash_and_salt;
+      command = "SELECT salt FROM " + SALT_USERNAME_TABLE + " WHERE username = '" + username + "';";
+      res = stmt->executeQuery(command);
+      
+      if (res->next())
+	salt = std::stoul(res->getString("salt"));
+    }
   
-  if (username != "") {      //search by username
-    std::string command = "SELECT salt FROM " + SALT_USERNAME_TABLE + " WHERE username = '"
-      + username + "';";
-    res = stmt->executeQuery(command);
+    char *plaintext = (char *) malloc(sizeof(char) * (password.size() + 1));
+    strcpy(plaintext, password.c_str());
 
-    if (res->next())
-      salt = std::stoul(res->getString("salt")); 
-    else {                    //No such username
+    char *recomputed_cstr = hash_plaintext(plaintext, password.size(), salt);
+    if (recomputed_cstr == NULL) {
+      free(recomputed_cstr);
+      free(plaintext);
       delete con;
       delete stmt;
       delete res;
+      return -2;
+    }
+
+    std::string recomputed = char_to_hex(recomputed_cstr, SHA512_DIGEST_LENGTH);
+    if (recomputed != hash_and_salt) //recomputed hash is different
       return -1;
-    }
-    delete res;
-    
-    command = "SELECT hash_and_salt FROM " + MAIN_TABLE + " WHERE username = '" +
-      username + "';";
-    res = stmt->executeQuery(command);  //Obtain hash_and_salt from database
-    
-    if (res->next())
-      hash_and_salt = res->getString("hash_and_salt");
-  }
 
-  else {         //search by email
-    std::string command = "SELECT username, hash_and_salt FROM " + MAIN_TABLE +
-      " WHERE email = '" + email + "';";
-    res = stmt->executeQuery(command);
-    
-    std::string username;
-    
-    if (res->next()) {
-      hash_and_salt = res->getString("hash_and_salt");
-      username = res->getString("username");
-    }
-    else {      //no such email
-      delete con;
-      delete stmt;
-      delete res;
-      return -1;
-    }
-    delete res;
-
-    command = "SELECT salt FROM " + SALT_USERNAME_TABLE + " WHERE username = '" + username + "';";
-    res = stmt->executeQuery(command);
-
-    if (res->next())
-      salt = std::stoul(res->getString("salt"));
-  }
-  
-  char *plaintext = (char *) malloc(sizeof(char) * (password.size() + 1));
-  strcpy(plaintext, password.c_str());
-
-  char *recomputed_cstr = hash_plaintext(plaintext, password.size(), salt);
-  if (recomputed_cstr == NULL) {
     free(recomputed_cstr);
     free(plaintext);
     delete con;
     delete stmt;
     delete res;
-    return -2;
+    return 0;
   }
-
-  std::string recomputed = char_to_hex(recomputed_cstr, SHA512_DIGEST_LENGTH);
-  if (recomputed != hash_and_salt) //recomputed hash is different
-    return -1;
   
-  free(recomputed_cstr);
-  free(plaintext);
-  delete con;
-  delete stmt;
-  delete res;
-  return 0;
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
 }
 
 int Account_Manager::add_user(std::string username, std::string password, std::string firstname,
@@ -217,62 +230,73 @@ int Account_Manager::add_user(std::string username, std::string password, std::s
 
   /* Returns -1 upon OpenSSL failure. Exception upon mysql failure 
      admin should be 1 if the user is an administrator. Else it should be 0 */
-  
-  unsigned long salt = salt_generator();        //generate the salt
-  char *plaintext = (char *) malloc(sizeof(const char) * (1 + password.size()));
-  strcpy(plaintext, password.c_str());
-  char *hash_and_salt_cstr = hash_plaintext(plaintext, password.size(), salt); //hash the password
 
-  if (hash_and_salt_cstr == NULL)
-    return -1;
+  try {
+    unsigned long salt = salt_generator();        //generate the salt
+    char *plaintext = (char *) malloc(sizeof(const char) * (1 + password.size()));
+    strcpy(plaintext, password.c_str());
+    char *hash_and_salt_cstr = hash_plaintext(plaintext, password.size(), salt); //hash the password
+    
+    if (hash_and_salt_cstr == NULL)
+      return -1;
 
-  //convert char to two-digit hexadecimal
-  std::string hash_and_salt = char_to_hex(hash_and_salt_cstr, SHA512_DIGEST_LENGTH);
+    //convert char to two-digit hexadecimal
+    std::string hash_and_salt = char_to_hex(hash_and_salt_cstr, SHA512_DIGEST_LENGTH);
 
-  free(hash_and_salt_cstr);
-  free(plaintext);
+    free(hash_and_salt_cstr);
+    free(plaintext);
 
-  /* actual mysql stuff starts here */
+    /* actual mysql stuff starts here */
+    
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+  
+    driver = sql::mysql::get_mysql_driver_instance();
+    con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
+    
+    stmt = con->createStatement();
+    stmt->execute("USE " + DB_NAME);
+  
+    std::string command = "INSERT INTO " + SALT_USERNAME_TABLE + " VALUES ('" + //Insert (username, salt)
+      username + "', " + std::to_string(salt) + ");";
+    stmt->execute(command);
+  
+    std::time_t rawtime; //Obtain time
+    std::tm* timeinfo;
+    char time_buf[64];
+    std::time(&rawtime);
+    timeinfo = std::gmtime(&rawtime);
+    std::strftime(time_buf, 64,"%Y-%m-%d %H:%M:%S",timeinfo);
+    std::string time_str(time_buf);
+    
+    command = "INSERT INTO " + MAIN_TABLE +
+      " (username, first_name, last_name, permission, email, hash_and_salt, create_date, update_date) VALUES ";
+  
+    command += "('" + username + "', '" + firstname + "', '" + lastname;
+    if (admin)
+      command += "', 'ADMIN";
+    else
+      command += "', 'USER";
+  
+    command += "', '" + email + "', '" + hash_and_salt + "', '" + time_str + "', '"
+      + time_str + "');";     //Insert rest of the data
+  
+    stmt->execute(command);
+  
+    delete con;
+    delete stmt;
+    return 0;
+  }
 
-  sql::mysql::MySQL_Driver *driver;
-  sql::Connection *con;
-  sql::Statement *stmt;
-  
-  driver = sql::mysql::get_mysql_driver_instance();
-  con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
-
-  stmt = con->createStatement();
-  stmt->execute("USE " + DB_NAME);
-  
-  std::string command = "INSERT INTO " + SALT_USERNAME_TABLE + " VALUES ('" + //Insert (username, salt)
-    username + "', " + std::to_string(salt) + ");";
-  stmt->execute(command);
-  
-  std::time_t rawtime; //Obtain time
-  std::tm* timeinfo;
-  char time_buf[64];
-  std::time(&rawtime);
-  timeinfo = std::gmtime(&rawtime);
-  std::strftime(time_buf, 64,"%Y-%m-%d %H:%M:%S",timeinfo);
-  std::string time_str(time_buf);
-  
-  command = "INSERT INTO " + MAIN_TABLE +
-    " (username, first_name, last_name, permission, email, hash_and_salt, create_date, update_date) VALUES ";
-  
-  command += "('" + username + "', '" + firstname + "', '" + lastname;
-  if (admin)
-    command += "', 'ADMIN";
-  else
-    command += "', 'USER";
-  
-  command += "', '" + email + "', '" + hash_and_salt + "', '" + time_str + "', '"
-    + time_str + "');";     //Insert rest of the data
-  
-  stmt->execute(command);
-  
-  delete con;
-  delete stmt;
-  return 0;
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
 }
 
 int Account_Manager::details_by_username(std::string username, std::string& email, std::string& firstname,
@@ -284,99 +308,435 @@ int Account_Manager::details_by_username(std::string username, std::string& emai
      Returns -2 if username is empty string
      Exception upon mysql failure */
 
-  sql::mysql::MySQL_Driver *driver;
-  sql::Connection *con;
-  sql::Statement *stmt;
-  sql::ResultSet *res;
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+    sql::ResultSet *res;
   
-  if (username == "")
-    return -2;
+    if (username == "")
+      return -2;
 
-  driver = sql::mysql::get_mysql_driver_instance();
-  con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
+    driver = sql::mysql::get_mysql_driver_instance();
+    con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
 
-  stmt = con->createStatement();
-  stmt->execute("USE " + DB_NAME);
+    stmt = con->createStatement();
+    stmt->execute("USE " + DB_NAME);
 
-  std::string command = "SELECT email, first_name, last_name, permission, create_date, update_date";
-  command += " FROM " + MAIN_TABLE + " WHERE username = '" + username + "';";
+    std::string command = "SELECT email, first_name, last_name, permission, create_date, update_date";
+    command += " FROM " + MAIN_TABLE + " WHERE username = '" + username + "';";
 
-  res = stmt->executeQuery(command);
+    res = stmt->executeQuery(command);
 
-  if (res->next()) {
-    email = res->getString("email");
-    firstname = res->getString("first_name");
-    lastname = res->getString("last_name");
-    create_date = res->getString("create_date");
-    update_date = res->getString("update_date");
-    if (res->getString("permission") == "ADMIN")
-      admin = 1;
+    if (res->next()) {
+      email = res->getString("email");
+      firstname = res->getString("first_name");
+      lastname = res->getString("last_name");
+      create_date = res->getString("create_date");
+      update_date = res->getString("update_date");
+      if (res->getString("permission") == "ADMIN")
+	admin = 1;
+      else
+	admin = 0;
+    }
     else
-      admin = 0;
-  }
-  else
-    return -1;
+      return -1;
 
-  delete con;
-  delete stmt;
-  delete res;
-  return 0;
+    delete con;
+    delete stmt;
+    delete res;
+    return 0;
+  }
+
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
 }
 
 int Account_Manager::delete_user(std::string username) {
   /* Removes the user associated with username from the database 
      Returns -1 if username is empty string. Exception upon mysql error */
 
-  sql::mysql::MySQL_Driver *driver;
-  sql::Connection *con;
-  sql::Statement *stmt;
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
 
-  if (username == "")
-    return -1;
+    if (username == "")
+      return -1;
 
-  driver = sql::mysql::get_mysql_driver_instance();
-  con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
+    driver = sql::mysql::get_mysql_driver_instance();
+    con = driver->connect("tcp://" + m_db_addr, m_username, m_password);
 
-  stmt = con->createStatement();
-  stmt->execute("USE " + DB_NAME);
+    stmt = con->createStatement();
+    stmt->execute("USE " + DB_NAME);
 
-  std::string command = "DELETE FROM " + MAIN_TABLE + " WHERE username = '" + username + "';";
-  stmt->execute(command);
+    std::string command = "DELETE FROM " + MAIN_TABLE + " WHERE username = '" + username + "';";
+    stmt->execute(command);
 
-  command = "DELETE FROM " + SALT_USERNAME_TABLE + " WHERE username = '" + username + "';";
-  stmt->execute(command);
+    command = "DELETE FROM " + SALT_USERNAME_TABLE + " WHERE username = '" + username + "';";
+    stmt->execute(command);
   
-  delete con;
-  delete stmt;
-  return 0;
+    delete con;
+    delete stmt;
+    return 0;
+  }
+  
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
+}
+
+
+
+/*..........................  
+        Object_Manager
+...........................*/
+
+
+
+/* public */
+Object_Manager::Object_Manager(std::string username, std::string password, std::vector<std::string> db_addr) {
+  m_username = username;
+  m_password = password;
+  m_db_addr = db_addr;
+  m_db_addr.erase(std::remove(m_db_addr.begin(), m_db_addr.end(), "127.0.0.1:3306"), m_db_addr.end());
+  m_db_addr.push_back("127.0.0.1:3306");
+}
+
+int Object_Manager::insert_general_object(std::string name, std::string desc, int id, double lat, double lon) {
+  /* Returns -1 if name is empty string, 0 if no error, error message upon MySQL error
+     Objects start as if dropped at specified location, with given id. To give them to a player 
+     call pickup_general_object*/
+  
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+
+    if (name == "")
+      return -1;
+
+    for (int i = 0; i < m_db_addr.size(); i++) {
+
+      std::string time_str = get_time_str();
+      std::string command = "INSERT INTO " + GENERAL_OBJECTS_TABLE +
+	"(id, object_name, object_desc, create_date,  update_date) VALUES (";
+      
+      command += std::to_string(id) + ", '" + name + "', '" + desc + "', '" + time_str + "', '" + time_str + "');";
+
+      driver = sql::mysql::get_mysql_driver_instance();
+      con = driver->connect("tcp://" + m_db_addr[i], m_username, m_password);
+      stmt = con->createStatement();
+      stmt->execute("USE " + DB_NAME);
+      stmt->execute(command);
+      
+      command = "INSERT INTO " + DROPPED_TABLE +
+	"(lat, lon, general_object, dropped_at) VALUES (";
+      command += std::to_string(lat) + ", " + std::to_string(lon) + ", " + std::to_string(id) + ", '" +
+	time_str + "');";
+
+      stmt->execute(command);
+    }
+
+    delete con;
+    delete stmt;
+    return 0;
+  }
+
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
+}
+
+int Object_Manager::drop_general_object(double lat, double lon, int id) {
+  /* If the object exists, it will be dropped at the specified location 
+     Returns 0 upon no error, error message upon MySQL error */
+  
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+
+    for (int i = 0; i < m_db_addr.size(); i++) {
+      std::string time_str = get_time_str();
+      std::string command = "UPDATE " + GENERAL_OBJECTS_TABLE +
+	" SET status='AVAILABLE', owner=null, update_date= '" + time_str + "' WHERE id = " + std::to_string(id);
+
+      driver = sql::mysql::get_mysql_driver_instance();
+      con = driver->connect("tcp://" + m_db_addr[i], m_username, m_password);
+      stmt = con->createStatement();
+      stmt->execute("USE " + DB_NAME);
+      stmt->execute(command);
+
+      command = "INSERT INTO " + DROPPED_TABLE +
+	"(lat, lon, general_object, dropped_at) VALUES (";
+      command += std::to_string(lat) + ", " + std::to_string(lon) + ", " + std::to_string(id) + ", '" +
+	time_str + "');";
+      
+      stmt->execute(command);
+    }
+
+    delete con;
+    delete stmt;
+    return 0;
+  }
+
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
+}
+
+int Object_Manager::pickup_general_object(int object_id, std::string owner_username) {
+
+  /* Returns 0 upon normal operation, error message printed in case of MySQL error
+     This function will assign the general_object with the id to the specified user */
+  
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+    std::string time_str = get_time_str();
+    
+    for (int i = 0; i < m_db_addr.size(); i++) {
+      driver = sql::mysql::get_mysql_driver_instance();
+      con = driver->connect("tcp://" + m_db_addr[i], m_username, m_password);
+
+      stmt = con->createStatement();
+      stmt->execute("USE " + DB_NAME);
+      
+      std::string command = "DELETE FROM " + DROPPED_TABLE + " WHERE general_object = "
+	+ std::to_string(object_id) + ";";
+      stmt->execute(command);
+
+      command = "UPDATE " + GENERAL_OBJECTS_TABLE + " SET status = 'OWNED', owner='" +
+	owner_username + "', update_date='" + time_str + "' WHERE id=" + std::to_string(object_id) + ";";
+      stmt->execute(command);
+    }
+
+    delete con;
+    delete stmt;
+    return 0;
+  }
+
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
+}
+
+int Object_Manager::delete_general_object(int id) {
+
+  /* Returns 0 in case of normal operation, error message in case of MySQL error
+     This will remove all traces of the object with the id. Any players carrying it
+     will no longer have it */
+  
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+
+    for (int i = 0; i < m_db_addr.size(); i++) {
+      driver = sql::mysql::get_mysql_driver_instance();
+      con = driver->connect("tcp://" + m_db_addr[i], m_username, m_password);
+
+      stmt = con->createStatement();
+      stmt->execute("USE " + DB_NAME);
+
+      std::string command = "DELETE FROM " + DROPPED_TABLE + " WHERE general_object = "
+	+ std::to_string(id) + ";";
+      stmt->execute(command);
+
+      command = "DELETE FROM " + GENERAL_OBJECTS_TABLE + " WHERE id = " + std::to_string(id) + ";";
+      stmt->execute(command);
+    }
+    
+    delete con;
+    delete stmt;
+    return 0;
+  }
+  
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
+}
+
+int Object_Manager::insert_weapon_object(std::string name, std::string desc, std::string weapon_type, int power,
+					 int id, double lat, double lon) {
+  /* Returns -1 if name is empty string, -2 if weapon_type is not "SWORD", "MACE", or "DAGGER",
+     and error message in case of MySQL error. The weapon object is dropped at the specified 
+     location. To give it to a player, call pickup_weapon_object */
+  
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+
+    if (name == "")
+      return -1;
+    if (weapon_type != "SWORD" && weapon_type != "MACE" && weapon_type != "DAGGER")
+      return -2;
+
+    for (int i = 0; i < m_db_addr.size(); i++) {
+
+      std::string time_str = get_time_str();
+      std::string command = "INSERT INTO " + WEAPON_OBJECTS_TABLE +
+	"(id, object_name, object_desc, create_date,  update_date, weapon_type, power) VALUES (";
+
+      command += std::to_string(id) + ", '" + name + "', '" + desc + "', '" + time_str + "', '" + time_str + "', '";
+      command += weapon_type + "', " + std::to_string(power) + ");";
+      
+      driver = sql::mysql::get_mysql_driver_instance();
+      con = driver->connect("tcp://" + m_db_addr[i], m_username, m_password);
+      stmt = con->createStatement();
+      stmt->execute("USE " + DB_NAME);
+      stmt->execute(command);
+
+      command = "INSERT INTO " + DROPPED_TABLE +
+	"(lat, lon, weapon_object, dropped_at) VALUES (";
+      command += std::to_string(lat) + ", " + std::to_string(lon) + ", " + std::to_string(id) + ", '" +
+	time_str + "');";
+
+      stmt->execute(command);
+    }
+
+    delete con;
+    delete stmt;
+    return 0;
+  }
+
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
+}
+
+int Object_Manager::drop_weapon_object(double lat, double lon, int id) {
+  /* If the object exists, it will be dropped at the specified location
+     Returns 0 upon no error, error message upon MySQL error */
+
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+
+    for (int i = 0; i < m_db_addr.size(); i++) {
+      std::string time_str = get_time_str();
+      std::string command = "UPDATE " + WEAPON_OBJECTS_TABLE +
+	" SET status='AVAILABLE', owner=null, update_date= '" + time_str + "' WHERE id = " + std::to_string(id);
+
+      driver = sql::mysql::get_mysql_driver_instance();
+      con = driver->connect("tcp://" + m_db_addr[i], m_username, m_password);
+      stmt = con->createStatement();
+      stmt->execute("USE " + DB_NAME);
+      stmt->execute(command);
+
+      command = "INSERT INTO " + DROPPED_TABLE +
+	"(lat, lon, weapom_object, dropped_at) VALUES (";
+      command += std::to_string(lat) + ", " + std::to_string(lon) + ", " + std::to_string(id) + ", '" +
+	time_str + "');";
+
+      stmt->execute(command);
+    }
+      
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
+}
+
+/* private */
+std::string Object_Manager::get_time_str() {
+  std::time_t rawtime; //Obtain time
+  std::tm* timeinfo;
+  char time_buf[64];
+  std::time(&rawtime);
+  timeinfo = std::gmtime(&rawtime);
+  std::strftime(time_buf, 64,"%Y-%m-%d %H:%M:%S",timeinfo);
+  std::string time_str(time_buf);
+  return time_str;
 }
 
 int main(int argc, char **argv) {
-  /*
-  openssl_init();
-  assert(add_user("billclinton", "passwordclint", "BILL", "CLINTON", "billclinton@g.ucla.edu", 1) == 0);
-  assert(add_user("akshaysmit", "password234", "AKSHAY", "SMIT", "akshaysmit@g.ucla.edu", 0) == 0);
-  assert(add_user("justint", "424by424", "JUSTIN", "TRUDEAU", "justint@g.ucla.edu", 0) == 0);
-  assert(add_user("user1", "password1", "USER", "1", "user1@g.ucla.edu", 0) == 0);
-  assert(add_user("user2", "password2", "USER", "2", "user2@g.ucla.edu", 0) == 0);
-  assert(add_user("user3", "password3", "USER", "3", "user3@g.ucla.edu", 0) == 0);
-  assert(add_user("user4", "password4", "USER", "4", "user4@g.ucla.edu", 0) == 0);
 
-  assert(check_credentials("akshaysmit", "", "password234") == 0);
-  assert(check_credentials("", "", "") == -3);
-  assert(check_credentials("", "akshaysmit@g.ucla.edu", "password234") == 0);
-  assert(check_credentials("", "justint@g.ucla.edu", "wrong") == -1);
-  assert(check_credentials("blah", "", "blahpass") == -1);
-  assert(check_credentials("", "blah@g.ucla.edu", "wrong") == -1);
+  std::vector<std::string> addr;
+  addr.push_back("127.0.0.1:3306");
+  Object_Manager om("root", "man50sarovar100", addr);
+  //om.insert_general_object("guitar", "two-string", 225, 23.0, 27.0);
+  om.drop_general_object(23.0, 27.0, 225);
+  //om.pickup_general_object(225, "martin");
+  om.pickup_general_object(-90, "martin");
+  assert(om.insert_weapon_object("swiss_knife", "ultra-swiss", "BLAH", 40, 300, 20.9, 32.5) == -2);
+  assert(om.insert_weapon_object("swiss_knife", "ultra-swiss", "SWORD", 40, 300, 20.9, 32.5) == 0);
+  
+  /*
+  Account_Manager manager("root", "man50sarovar100", "127.0.0.1:3306");
+  assert(manager.add_user("billclinton", "passwordclint", "BILL", "CLINTON", "billclinton@g.ucla.edu", 1) == 0);
+  assert(manager.add_user("akshaysmit", "password234", "AKSHAY", "SMIT", "akshaysmit@g.ucla.edu", 0) == 0);
+  assert(manager.add_user("justint", "424by424", "JUSTIN", "TRUDEAU", "justint@g.ucla.edu", 0) == 0);
+  assert(manager.add_user("user1", "password1", "USER", "1", "user1@g.ucla.edu", 0) == 0);
+  assert(manager.add_user("user2", "password2", "USER", "2", "user2@g.ucla.edu", 0) == 0);
+  assert(manager.add_user("user3", "password3", "USER", "3", "user3@g.ucla.edu", 0) == 0);
+  assert(manager.add_user("user4", "password4", "USER", "4", "user4@g.ucla.edu", 0) == 0);
+
+  assert(manager.check_credentials("akshaysmit", "", "password234") == 0);
+  assert(manager.check_credentials("", "", "") == -3);
+  assert(manager.check_credentials("", "akshaysmit@g.ucla.edu", "password234") == 0);
+  assert(manager.check_credentials("", "justint@g.ucla.edu", "wrong") == -1);
+  assert(manager.check_credentials("blah", "", "blahpass") == -1);
+  assert(manager.check_credentials("", "blah@g.ucla.edu", "wrong") == -1);
 
   std::string email, firstname, lastname, create_date, update_date;
   int admin;
 
-  details_by_username("akshaysmit", email, firstname, lastname, create_date, update_date, admin);
+  manager.details_by_username("akshaysmit", email, firstname, lastname, create_date, update_date, admin);
   std::cout << email << " " << firstname << " " << lastname << " " << create_date << " "
 	    << update_date << " " << admin << std::endl;
   
-  assert(delete_user("akshaysmit") == 0);
-  assert(delete_user("billclinton") == 0);
-  assert(delete_user("justint") == 0); */
+  assert(manager.delete_user("akshaysmit") == 0);
+  assert(manager.delete_user("billclinton") == 0);
+  assert(manager.delete_user("justint") == 0);
+  assert(manager.delete_user("user1") == 0);
+  assert(manager.delete_user("user2") == 0);
+  assert(manager.delete_user("user3") == 0);
+  assert(manager.delete_user("user4") == 0);
+
+  */
 }
