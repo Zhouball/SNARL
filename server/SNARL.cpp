@@ -665,13 +665,216 @@ int Object_Manager::drop_weapon_object(double lat, double lon, int id) {
       stmt->execute(command);
 
       command = "INSERT INTO " + DROPPED_TABLE +
-	"(lat, lon, weapom_object, dropped_at) VALUES (";
+	"(lat, lon, weapon_object, dropped_at) VALUES (";
       command += std::to_string(lat) + ", " + std::to_string(lon) + ", " + std::to_string(id) + ", '" +
 	time_str + "');";
 
       stmt->execute(command);
     }
+
+    delete con;
+    delete stmt;
+    return 0;
+  }
       
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5; 
+  }
+}
+
+int Object_Manager::pickup_weapon_object(int object_id, std::string owner_username) {
+  /* Returns 0 upon normal operation, error message printed in case of MySQL error
+     This function will assign the weapon_object with the id to the specified user */
+  
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+    std::string time_str = get_time_str();
+
+    for (int i = 0; i < m_db_addr.size(); i++) {
+      driver = sql::mysql::get_mysql_driver_instance();
+      con = driver->connect("tcp://" + m_db_addr[i], m_username, m_password);
+
+      stmt = con->createStatement();
+      stmt->execute("USE " + DB_NAME);
+
+      std::string command = "DELETE FROM " + DROPPED_TABLE + " WHERE weapon_object = "
+	+ std::to_string(object_id) + ";";
+      stmt->execute(command);
+
+      command = "UPDATE " + WEAPON_OBJECTS_TABLE + " SET status = 'OWNED', owner='" +
+	owner_username + "', update_date='" + time_str + "' WHERE id=" + std::to_string(object_id) + ";";
+      stmt->execute(command);
+    }
+
+    delete con;
+    delete stmt;
+    return 0;
+  }
+  
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
+}
+
+int Object_Manager::delete_weapon_object(int id) {
+  /* Returns 0 in case of normal operation, error message in case of MySQL error
+     This will remove all traces of the object with the id. Any players carrying it
+     will no longer have it */
+  
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+
+    for (int i = 0; i < m_db_addr.size(); i++) {
+      driver = sql::mysql::get_mysql_driver_instance();
+      con = driver->connect("tcp://" + m_db_addr[i], m_username, m_password);
+
+      stmt = con->createStatement();
+      stmt->execute("USE " + DB_NAME);
+
+      std::string command = "DELETE FROM " + DROPPED_TABLE + " WHERE weapon_object = "
+	+ std::to_string(id) + ";";
+      stmt->execute(command);
+
+      command = "DELETE FROM " + WEAPON_OBJECTS_TABLE + " WHERE id = " + std::to_string(id) + ";";
+      stmt->execute(command);
+    }
+
+    delete con;
+    delete stmt;
+    return 0;
+  }
+  
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
+}
+
+
+int Object_Manager::general_objects_at(double lat, double lon, std::vector<std::string>& name,
+				       std::vector<std::string>& desc, std::vector<int>& id) {
+  /* This returns all general_objects at the specified location. Names go in name, descriptions go
+     in desc, object id goes in id. This function WILL CLEAR vector arguments.
+     Returns 0 upon normal operation, or prints error message in case MySQL error */
+
+  name.clear();
+  desc.clear();
+  id.clear();
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+    sql::ResultSet *res;
+
+    driver = sql::mysql::get_mysql_driver_instance();
+    con = driver->connect("tcp://127.0.0.1:3306", m_username, m_password);
+
+    stmt = con->createStatement();
+    stmt->execute("USE " + DB_NAME);
+
+    std::string command = "select general_object from " + DROPPED_TABLE + " where lat = " + std::to_string(lat);
+    command += " and lon = " + std::to_string(lon) + ";";
+    res = stmt->executeQuery(command);
+
+    while(res->next())
+      id.push_back(std::stoi(res->getString("general_object")));
+
+    for (int i = 0; i < id.size(); i++) {
+      command = "select * from " + GENERAL_OBJECTS_TABLE + " where id = " + std::to_string(id[i]) + ";";
+      res = stmt->executeQuery(command);
+
+      if (res->next()) {
+	name.push_back(res->getString("object_name"));
+	desc.push_back(res->getString("object_desc"));
+      }
+    }
+    
+    delete con;
+    delete stmt;
+    delete res;
+    return 0;
+  }
+  
+  catch (sql::SQLException &e) {
+    std::cout << "# ERR: SQLException in " << __FILE__;
+    std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
+    std::cout << "# ERR: " << e.what();
+    std::cout << " (MySQL error code: " << e.getErrorCode();
+    std::cout << ", SQLState: " << e.getSQLState() << " )" << std::endl;
+    return -5;
+  }
+}
+
+int Object_Manager::weapon_objects_at(double lat, double lon, std::vector<std::string>& name,
+				      std::vector<std::string>& desc, std::vector<std::string>& type,
+				      std::vector<int>& power, std::vector<int>& id) {
+
+  /* This returns all weapon_objects at the specified location. Names go in name, descriptions go
+     in desc, object id goes in id, weapon type goes in type, power of the weapon goes in power
+     This function WILL CLEAR the vector arguments.
+     Returns 0 upon normal operation, or prints error message in case MySQL error */
+  
+  name.clear();
+  desc.clear();
+  type.clear();
+  power.clear();
+  id.clear();
+  
+  try {
+    sql::mysql::MySQL_Driver *driver;
+    sql::Connection *con;
+    sql::Statement *stmt;
+    sql::ResultSet *res;
+
+    driver = sql::mysql::get_mysql_driver_instance();
+    con = driver->connect("tcp://127.0.0.1:3306", m_username, m_password);
+
+    stmt = con->createStatement();
+    stmt->execute("USE " + DB_NAME);
+
+    std::string command = "select weapon_object from " + DROPPED_TABLE + " where lat = " + std::to_string(lat);
+    command += " and lon = " + std::to_string(lon) + ";";
+    res = stmt->executeQuery(command);
+
+    while(res->next())
+      id.push_back(std::stoi(res->getString("weapon_object")));
+
+    for (int i = 0; i < id.size(); i++) {
+      command = "select * from " + WEAPON_OBJECTS_TABLE + " where id = " + std::to_string(id[i]) + ";";
+      res = stmt->executeQuery(command);
+
+      if (res->next()) {
+	name.push_back(res->getString("object_name"));
+	desc.push_back(res->getString("object_desc"));
+	type.push_back(res->getString("weapon_type"));
+	power.push_back(std::stoi(res->getString("power")));
+      }
+    }
+
+    delete con;
+    delete stmt;
+    delete res;
+    return 0;
+  }
+  
   catch (sql::SQLException &e) {
     std::cout << "# ERR: SQLException in " << __FILE__;
     std::cout << "(" << __FUNCTION__ << ") on line " << __LINE__ << std::endl;
@@ -693,18 +896,54 @@ std::string Object_Manager::get_time_str() {
   std::string time_str(time_buf);
   return time_str;
 }
-
+ 
 int main(int argc, char **argv) {
 
   std::vector<std::string> addr;
   addr.push_back("127.0.0.1:3306");
   Object_Manager om("root", "man50sarovar100", addr);
-  //om.insert_general_object("guitar", "two-string", 225, 23.0, 27.0);
-  om.drop_general_object(23.0, 27.0, 225);
-  //om.pickup_general_object(225, "martin");
-  om.pickup_general_object(-90, "martin");
+  om.insert_general_object("guitar", "two-string", 225, 74.6, 10.5);
+  om.insert_general_object("Mac", "11 inch", 447, 74.6, 10.5);
+  om.insert_general_object("Apple", "Green", 508, 74.6, 10.5);
+  om.insert_general_object("Apple", "Green", 509, 74.6, 10.5);
+  om.insert_general_object("Apple", "Black", 510, 74.6, 10.5);
+  om.insert_general_object("Apple", "Green", 511, 74.6, 10.5);
+  om.insert_general_object("Dell", "PC", 512, 70.6, 10.9);
   assert(om.insert_weapon_object("swiss_knife", "ultra-swiss", "BLAH", 40, 300, 20.9, 32.5) == -2);
   assert(om.insert_weapon_object("swiss_knife", "ultra-swiss", "SWORD", 40, 300, 20.9, 32.5) == 0);
+  assert(om.insert_weapon_object("bighammer", "Thor-class", "MACE", 80, 301, 20.9, 32.5) == 0);
+  assert(om.insert_weapon_object("khukri", "Gurkha-level", "SWORD", 90, 302, 20.9, 32.5) == 0);
+  assert(om.insert_weapon_object("byzantine spear", "deadly", "SWORD", 100, 309, 20, 30.5) == 0);
+  
+  std::vector<std::string> name;
+  std::vector<std::string> desc;
+  std::vector<int> id;
+  std::vector<int> power;
+  std::vector<std::string> type;
+  
+  om.general_objects_at(74.6, 10.5, name, desc, id);
+
+  for (int i = 0; i < id.size(); i++) {
+    std::cout << name[i] << " " << desc[i] << " " << id[i] << std::endl;
+  }
+
+  om.weapon_objects_at(20.9, 32.5, name, desc, type, power, id);
+
+  for (int i = 0; i < id.size(); i++) {
+    std::cout << name[i] << " " << desc[i] << " " << type[i] << " " << power[i] << " "  << id[i] << std::endl;
+  }
+  
+  om.delete_general_object(225);
+  om.delete_general_object(447);
+  om.delete_general_object(508);
+  om.delete_general_object(509);
+  om.delete_general_object(510);
+  om.delete_general_object(511);
+  om.delete_general_object(512);
+  om.delete_weapon_object(300);
+  om.delete_weapon_object(301);
+  om.delete_weapon_object(302);
+  om.delete_weapon_object(309);
   
   /*
   Account_Manager manager("root", "man50sarovar100", "127.0.0.1:3306");

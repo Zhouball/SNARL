@@ -69,7 +69,7 @@ class Object_Manager {
   int insert_weapon_object(std::string name, std::string desc, std::string weapon_type, int power,
 			   int id, double lat, double lon);
   int drop_weapon_object(double lat, double lon, int id);
-  int pickup_weapon_object(int id);
+  int pickup_weapon_object(int object_id, std::string owner_username);
   int delete_weapon_object(int id);
   
  private:
