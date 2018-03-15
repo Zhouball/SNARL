@@ -3,7 +3,12 @@
 # This script installs MySQL Server.
 # Args: password
 # Call with:
-# $./install_mysql.sh password
+# $./install_mysql.sh `password`
+
+if [[ $# -eq 0 ]] ; then
+    echo 'Please enter password to set up database'
+    exit 1
+fi
 
 DEFAULT_PW=$1
 SET_PW="mysql-server mysql-server/root_password password "$DEFAULT_PW
