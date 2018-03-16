@@ -447,9 +447,9 @@ int Object_Manager::insert_general_object(std::string name, std::string desc, in
 	time_str + "');";
 
       stmt->execute(command);
+      CloseDBConnection(con, driver);
     }
 
-    delete con;
     delete stmt;
     return 0;
   }
@@ -490,9 +490,9 @@ int Object_Manager::drop_general_object(double lat, double lon, int id) {
 	time_str + "');";
       
       stmt->execute(command);
+      CloseDBConnection(con, driver);
     }
 
-    delete con;
     delete stmt;
     return 0;
   }
@@ -532,9 +532,9 @@ int Object_Manager::pickup_general_object(int object_id, std::string owner_usern
       command = "UPDATE " + GENERAL_OBJECTS_TABLE + " SET status = 'OWNED', owner='" +
 	owner_username + "', update_date='" + time_str + "' WHERE id=" + std::to_string(object_id) + ";";
       stmt->execute(command);
+      CloseDBConnection(con, driver);
     }
 
-    delete con;
     delete stmt;
     return 0;
   }
@@ -573,9 +573,9 @@ int Object_Manager::delete_general_object(int id) {
 
       command = "DELETE FROM " + GENERAL_OBJECTS_TABLE + " WHERE id = " + std::to_string(id) + ";";
       stmt->execute(command);
+      CloseDBConnection(con, driver);
     }
-    
-    delete con;
+   
     delete stmt;
     return 0;
   }
@@ -627,9 +627,9 @@ int Object_Manager::insert_weapon_object(std::string name, std::string desc, std
 	time_str + "');";
 
       stmt->execute(command);
+      CloseDBConnection(con, driver);
     }
 
-    delete con;
     delete stmt;
     return 0;
   }
@@ -670,9 +670,9 @@ int Object_Manager::drop_weapon_object(double lat, double lon, int id) {
 	time_str + "');";
 
       stmt->execute(command);
+      CloseDBConnection(con, driver);
     }
 
-    delete con;
     delete stmt;
     return 0;
   }
@@ -711,9 +711,9 @@ int Object_Manager::pickup_weapon_object(int object_id, std::string owner_userna
       command = "UPDATE " + WEAPON_OBJECTS_TABLE + " SET status = 'OWNED', owner='" +
 	owner_username + "', update_date='" + time_str + "' WHERE id=" + std::to_string(object_id) + ";";
       stmt->execute(command);
+      CloseDBConnection(con, driver);
     }
 
-    delete con;
     delete stmt;
     return 0;
   }
@@ -751,9 +751,9 @@ int Object_Manager::delete_weapon_object(int id) {
 
       command = "DELETE FROM " + WEAPON_OBJECTS_TABLE + " WHERE id = " + std::to_string(id) + ";";
       stmt->execute(command);
+      CloseDBConnection(con, driver);
     }
 
-    delete con;
     delete stmt;
     return 0;
   }
@@ -808,8 +808,8 @@ int Object_Manager::general_objects_at(double lat, double lon, std::vector<std::
 	desc.push_back(res->getString("object_desc"));
       }
     }
-    
-    delete con;
+
+    CloseDBConnection(con, driver);
     delete stmt;
     delete res;
     return 0;
@@ -872,7 +872,7 @@ int Object_Manager::weapon_objects_at(double lat, double lon, std::vector<std::s
       }
     }
 
-    delete con;
+    CloseDBConnection(con, driver);
     delete stmt;
     delete res;
     return 0;
@@ -899,12 +899,20 @@ std::string Object_Manager::get_time_str() {
   std::string time_str(time_buf);
   return time_str;
 }
- 
+
+void Object_Manager::CloseDBConnection(sql::Connection *con, sql::mysql::MySQL_Driver *driver) {
+  con->close();
+  delete con;
+  driver->threadEnd();
+}
+
 int main(int argc, char **argv) {
 
   std::vector<std::string> addr;
-  addr.push_back("127.0.0.1:3306");
-  Object_Manager om("root", "", addr);
+  addr.push_back("ec2-18-144-58-167.us-west-1.compute.amazonaws.com:3306");
+  Object_Manager om("akshaysmit", "weak_password", addr);
+
+  /*
   om.insert_general_object("guitar", "two-string", 225, 74.6, 10.5);
   om.insert_general_object("Mac", "11 inch", 447, 74.6, 10.5);
   om.insert_general_object("Apple", "Green", 508, 74.6, 10.5);
@@ -935,7 +943,12 @@ int main(int argc, char **argv) {
   for (int i = 0; i < id.size(); i++) {
     std::cout << name[i] << " " << desc[i] << " " << type[i] << " " << power[i] << " "  << id[i] << std::endl;
   }
+*/
   
+  for (int i = 0; i < 100; i++)
+    assert(om.insert_weapon_object("byzantine spear", "deadly", "SWORD", 100, 3000+i, 20, 30.5) == 0);
+  
+  /*
   om.delete_general_object(225);
   om.delete_general_object(447);
   om.delete_general_object(508);
@@ -948,7 +961,7 @@ int main(int argc, char **argv) {
   om.delete_weapon_object(302);
   om.delete_weapon_object(309);
   
-  /*
+  
   Account_Manager manager("root", "man50sarovar100", "127.0.0.1:3306");
   assert(manager.add_user("billclinton", "passwordclint", "BILL", "CLINTON", "billclinton@g.ucla.edu", 1) == 0);
   assert(manager.add_user("akshaysmit", "password234", "AKSHAY", "SMIT", "akshaysmit@g.ucla.edu", 0) == 0);
