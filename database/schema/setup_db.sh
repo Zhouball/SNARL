@@ -3,7 +3,7 @@
 PW="escality1" #$1
 ADMIN_DB="administrative"
 GAME_DB="game"
-CONF=$HOME/src/SNARL/database/mysql.cnf
+CONF=$HOME/SNARL/database/mysql.cnf
 # Create db named escality
 mysql --defaults-extra-file=$CONF < 2018-02-21-00-create_db.sql
 
