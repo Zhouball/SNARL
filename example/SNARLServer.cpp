@@ -5,10 +5,10 @@
 #include <proxygen/httpserver/HTTPServer.h>
 #include <proxygen/httpserver/RequestHandlerFactory.h>
 
-#include "EchoHandler.h"
-#include "EchoStats.h"
+#include "SNARLHandler.h"
+#include "SNARLStats.h"
 
-using namespace EchoService;
+using namespace SNARLService;
 using namespace proxygen;
 
 using folly::EventBase;
@@ -24,10 +24,10 @@ DEFINE_string(ip, "localhost", "IP/Hostname to bind to");
 DEFINE_int32(threads, 0, "Number of threads to listen on. Numbers <= 0 "
              "will use the number of cores on this machine.");
 
-class EchoHandlerFactory : public RequestHandlerFactory {
+class SNARLHandlerFactory : public RequestHandlerFactory {
  public:
   void onServerStart(folly::EventBase* /*evb*/) noexcept override {
-    stats_.reset(new EchoStats);
+    stats_.reset(new SNARLStats);
   }
 
   void onServerStop() noexcept override {
@@ -35,11 +35,11 @@ class EchoHandlerFactory : public RequestHandlerFactory {
   }
 
   RequestHandler* onRequest(RequestHandler*, HTTPMessage*) noexcept override {
-    return new EchoHandler(stats_.get());
+    return new SNARLHandler(stats_.get());
   }
 
  private:
-  folly::ThreadLocalPtr<EchoStats> stats_;
+  folly::ThreadLocalPtr<SNARLStats> stats_;
 };
 
 int main(int argc, char* argv[]) {
@@ -64,7 +64,7 @@ int main(int argc, char* argv[]) {
   options.shutdownOn = {SIGINT, SIGTERM};
   options.enableContentCompression = false;
   options.handlerFactories = RequestHandlerChain()
-      .addThen<EchoHandlerFactory>()
+      .addThen<SNARLHandlerFactory>()
       .build();
   options.h2cEnabled = true;
 

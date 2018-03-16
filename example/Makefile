@@ -1,5 +1,5 @@
 all:
-	g++ -std=c++14 -o echo_server EchoServer.cpp EchoHandler.cpp -lproxygenhttpserver -lfolly -lglog -lgflags -pthread
+	g++ -std=c++14 -o snarl_server SNARLServer.cpp SNARLHandler.cpp -lproxygenhttpserver -lfolly -lglog -lgflags -pthread
 
 clean:
-	rm echo_server
+	rm snarl_server
