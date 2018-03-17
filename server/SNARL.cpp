@@ -945,8 +945,8 @@ int main(int argc, char **argv) {
   }
 */
   
-  for (int i = 0; i < 100; i++)
-    assert(om.insert_weapon_object("byzantine spear", "deadly", "SWORD", 100, 3000+i, 20, 30.5) == 0);
+  for (int i = 0; i < 20; i++)
+    assert(om.insert_weapon_object("roman longsword", "legionnary", "SWORD", 57, 7000+i, 20, 30.5) == 0);
   
   /*
   om.delete_general_object(225);

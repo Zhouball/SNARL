@@ -10,9 +10,10 @@
 #include <cppconn/resultset.h>
 #include <cppconn/statement.h>
 
-/* A class to manage the accounts database. Only one machine need use this object. 
-   Apart from documentation, the implementation file contains description of 
-   parameters and return values */
+/* A class to manage the accounts database. Any machine that wants to modify 
+   accounts information should have an instance of this object. 
+   The implementation file contains description of parameters and return 
+   values */
 
 class Account_Manager {
  public:
@@ -49,8 +50,8 @@ class Account_Manager {
 
 
 /* A class to manage the dynamic objects database. Each machine with a dynamic object database
-   must have an instance of this class. Apart from documentation the implementation file contains 
-   description of parameters and return values */
+   must have an instance of this class. The implementation file contains description of parameters 
+   and return values */
 
 class Object_Manager {
  public:
